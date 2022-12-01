@@ -1,16 +1,17 @@
 import os
 import argparse as ap
+import sys
 from argparse import RawDescriptionHelpFormatter
 
-from pyspark.ml.classification import LogisticRegression, DecisionTreeClassifier, RandomForestClassifier, GBTClassifier, \
-    MultilayerPerceptronClassifier, LinearSVC, NaiveBayes
-from pyspark.ml.feature import VectorAssembler
+from pyspark.ml.classification import LogisticRegression, DecisionTreeClassifier, RandomForestClassifier, \
+    GBTClassifier, MultilayerPerceptronClassifier, LinearSVC, NaiveBayes
+from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler
 from pyspark.ml.regression import LinearRegression, RandomForestRegressor, DecisionTreeRegressor, GBTRegressor
 from pyspark.ml.evaluation import RegressionEvaluator, MulticlassClassificationEvaluator
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
-from pyspark.sql.functions import transform, col, isnan, when, count
-from pyspark.sql.types import StructType, StructField, FloatType, BooleanType, DoubleType, IntegerType, StringType
+from pyspark.sql.functions import col, isnan, when, count
+from pyspark.sql.types import IntegerType
 
 spark = SparkSession.builder.getOrCreate()
 
@@ -60,19 +61,22 @@ class DataCleaner:
 
     @staticmethod
     def _remove_nulls(df):
-        df = df.filter(col('ArrDelay').isNotNull())
-        df = df.filter(col('CRSElapsedTime').isNotNull())
+        # df = df.filter(col('ArrDelay').isNotNull())
+        # df = df.filter(col('CRSElapsedTime').isNotNull())
+        df = df.dropna()
         return df
 
 
 class DataTransformer:
+    IntColumns = ['Year', 'Month', 'DayofMonth', 'DayOfWeek', 'CRSElapsedTime', 'ArrDelay', 'DepDelay', 'Distance', 'TaxiOut']
 
     @staticmethod
     def transform(df):
         df = DataTransformer._do_transform_time_to_mins(df)
-        # TODO OneHotEncoder
-        # df = DataTransformer._prepare_features_cols(df)
-        # df = DataTransformer._keep_train_cols_only(df)
+        df = DataTransformer._do_cast_ints(df)
+        df = DataTransformer._one_hot_encode(df)
+        df = DataTransformer._prepare_features_cols(df)
+        df = DataTransformer._keep_train_cols_only(df)
         return df
 
     @staticmethod
@@ -88,8 +92,31 @@ class DataTransformer:
         return df
 
     @staticmethod
+    def _do_cast_ints(df):
+        for c in DataTransformer.IntColumns:
+            df = df.withColumn(c, col(c).cast('int'))
+        df = df.dropna()  # Casting may introduce some new null values in
+        return df
+
+    @staticmethod
+    def _one_hot_encode(df):
+        categorical_columns = [item[0] for item in df.dtypes if item[1].startswith('string')]
+        for c in categorical_columns:
+            string_indexer = StringIndexer(inputCol=c, outputCol=c + "Index")
+            df = string_indexer.fit(df).transform(df)
+        df = df.withColumnRenamed('Month', 'MonthIndex')
+        df = df.withColumnRenamed('DayOfWeek', 'DayOfWeekIndex')
+
+        df.select([count(when(isnan(c) | col(c).isNull(), c)).alias(c) for c in df.columns]).show()
+
+        for column in categorical_columns + ['Month', 'DayOfWeek']:
+            one_hot_encoder = OneHotEncoder(inputCol=column + "Index", outputCol=column + "_vec")
+            df = one_hot_encoder.fit(df).transform(df)
+        return df
+
+    @staticmethod
     def _prepare_features_cols(df):
-        input_columns = ['Year', 'Month', 'DayofMonth', 'DayOfWeek', 'DepTime', 'CRSDepTime', 'CRSArrTime',
+        input_columns = ['Year', 'Month_vec', 'DayofMonth', 'DayOfWeek_vec', 'DepTime', 'CRSDepTime', 'CRSArrTime',
                          'CRSElapsedTime', 'DepDelay', 'Distance', 'TaxiOut', 'UniqueCarrier_vec', 'FlightNum_vec',
                          'TailNum_vec', 'Origin_vec', 'Dest_vec']
         output_column = "features"
@@ -116,7 +143,7 @@ class Trainer:
     @classmethod
     def test(cls, df, models):
         predictions = {k: models[k].transform(df) for k in models}
-        evaluations = {k: cls.evaluator.evaluate(df, predictions[k]) for k in predictions}
+        evaluations = {k: cls.evaluator.evaluate(predictions[k]) for k in predictions}
         return evaluations
 
 
@@ -203,14 +230,17 @@ def run_spark(years: list = [], reg_models: list = [], class_models: list = [], 
     reg_trainer = RegressionTrainer()
     clas_trainer = ClassificationTrainer()
     reg_trained = reg_trainer.train(df_train, reg_models)
-    class_trained = clas_trainer.train(df_train, reg_models)
+    #class_trained = clas_trainer.train(df_train, class_models)
+
+    # TODO Classification models
 
     regression_evaluations = reg_trainer.test(df_test, reg_trained)
-    classification_evaluations = clas_trainer.test(df_test, class_trained)
+    #classification_evaluations = clas_trainer.test(df_test, class_trained)
 
     df.printSchema()
     print(df.count())
     df.show(20)
+    print(regression_evaluations)
 
 
 if __name__ == '__main__':
