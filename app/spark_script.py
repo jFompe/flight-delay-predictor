@@ -244,7 +244,6 @@ if __name__ == '__main__':
                 years_list += [n for n in range(int(i), int(e) + 1)]
         return years_list
 
-
     def models_parser(inp_str: str, models) -> list:
         if inp_str == 'all':
             return [k for k in models]
@@ -252,7 +251,7 @@ if __name__ == '__main__':
 
 
     years = years_parser(args.years.strip())
-    regs = models_parser(args.regressions.strip(), RegressionTrainer.available_models)
-    classifs = models_parser(args.classifications.strip(), ClassificationTrainer.available_models)
+    regressors = models_parser(args.regressions.strip(), RegressionTrainer.available_models)
+    classifiers = models_parser(args.classifications.strip(), ClassificationTrainer.available_models)
     class_int = args.classification_interval
-    run_spark(years=years, reg_models=regs, class_models=classifs, class_interv=class_int)
+    run_spark(years=years, reg_models=regressors, class_models=classifiers, class_interv=class_int)
