@@ -2,16 +2,15 @@ import os
 import argparse as ap
 from argparse import RawDescriptionHelpFormatter
 
-import pyspark
-from pyspark import SQLContext
+from pyspark.ml.classification import LogisticRegression, DecisionTreeClassifier, RandomForestClassifier, GBTClassifier, \
+    MultilayerPerceptronClassifier, LinearSVC, NaiveBayes
 from pyspark.ml.feature import VectorAssembler
-from pyspark.ml.regression import LinearRegression
-from pyspark.ml.evaluation import RegressionEvaluator
+from pyspark.ml.regression import LinearRegression, RandomForestRegressor, DecisionTreeRegressor, GBTRegressor
+from pyspark.ml.evaluation import RegressionEvaluator, MulticlassClassificationEvaluator
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
 from pyspark.sql.functions import transform, col, isnan, when, count
 from pyspark.sql.types import StructType, StructField, FloatType, BooleanType, DoubleType, IntegerType, StringType
-
 
 spark = SparkSession.builder.getOrCreate()
 
@@ -72,8 +71,8 @@ class DataTransformer:
     def transform(df):
         df = DataTransformer._do_transform_time_to_mins(df)
         # TODO OneHotEncoder
-        #df = DataTransformer._prepare_features_cols(df)
-        #df = DataTransformer._keep_train_cols_only(df)
+        # df = DataTransformer._prepare_features_cols(df)
+        # df = DataTransformer._keep_train_cols_only(df)
         return df
 
     @staticmethod
@@ -81,6 +80,7 @@ class DataTransformer:
         def time_to_mins(t: str):
             t = t.zfill(4)
             return int(t[:2]) * 60 + int(t[2:])
+
         time_to_mins_udf = F.udf(time_to_mins, IntegerType())
         df = df.withColumn('DepTime', time_to_mins_udf('DepTime'))
         df = df.withColumn('CRSDepTime', time_to_mins_udf('CRSDepTime'))
@@ -103,30 +103,96 @@ class DataTransformer:
         return df.select(['features', 'ArrDelay']).withColumnRenamed('ArrDelay', 'label')
 
 
+class Trainer:
+    available_models = {}
+    evaluator = None
+
+    @classmethod
+    def train(cls, df, selected_models):
+        trainers = {k: cls.available_models[k] for k in selected_models}
+        models = {k: trainers[k].fit(df) for k in trainers}
+        return models
+
+    @classmethod
+    def test(cls, df, models):
+        predictions = {k: models[k].transform(df) for k in models}
+        evaluations = {k: cls.evaluator.evaluate(df, predictions[k]) for k in predictions}
+        return evaluations
+
+
+class RegressionTrainer(Trainer):
+    available_models = {
+        'lr': LinearRegression(featuresCol='features', labelCol='label'),
+        'dtr': DecisionTreeRegressor(),
+        'rfr': RandomForestRegressor(featuresCol='features'),
+        'gbtr': GBTRegressor()
+    }
+    evaluator = RegressionEvaluator()
+
+
+class ClassificationTrainer(Trainer):
+    available_models = {
+        'mlr': LogisticRegression(),
+        'dtc': DecisionTreeClassifier(),
+        'rfc': RandomForestClassifier(),
+        'gbtc': GBTClassifier(),
+        'mlpc': MultilayerPerceptronClassifier(),
+        'lsvc': LinearSVC(),
+        'nbc': NaiveBayes()
+    }
+    evaluator = MulticlassClassificationEvaluator()
+
+
+'''
 class RegressionHelper:
+    regressions = {
+        'lr': LinearRegression(featuresCol='features', labelCol='label'),
+        'dtr': DecisionTreeRegressor(),
+        'rfr': RandomForestRegressor(featuresCol='features'),
+        'gbtr': GBTRegressor()
+    }
+    evaluator = RegressionEvaluator()
 
     @staticmethod
-    def train(df, selected_models) -> list:
-        pass
+    def train(df, selected_models) -> dict:
+        regressors = {k: RegressionHelper.regressions[k] for k in selected_models}
+        models = {k: regressors[k].fit(df) for k in regressors}
+        return models
 
     @staticmethod
-    def test(df, models) -> list:
-        pass
+    def test(df, models) -> dict:
+        predictions = {k: models[k].transform(df) for k in models}
+        evaluations = {k: RegressionHelper.evaluator.evaluate(df, predictions[k]) for k in predictions}
+        return evaluations
 
 
 class ClassificationHelper:
+    classifications = {
+        'mlr': LogisticRegression(),
+        'dtc': DecisionTreeClassifier(),
+        'rfc': RandomForestClassifier(),
+        'gbtc': GBTClassifier(),
+        'mlpc': MultilayerPerceptronClassifier(),
+        'lsvc': LinearSVC(),
+        'nbc': NaiveBayes()
+    }
+    evaluator = MulticlassClassificationEvaluator()
 
     @staticmethod
-    def train(df, selected_models) -> list:
-        pass
+    def train(df, selected_models) -> dict:
+        classifiers = {k: ClassificationHelper.classifications[k] for k in selected_models}
+        models = {k: classifiers[k].fit(df) for k in classifiers}
+        return models
 
     @staticmethod
-    def test(df, models) -> list:
-        pass
+    def test(df, models) -> dict:
+        predictions = {k: models[k].transform(df) for k in models}
+        evaluations = {k: ClassificationHelper.evaluator.evaluate(df, predictions[k]) for k in predictions}
+        return evaluations
+'''
 
 
 def run_spark(years: list = [], reg_models: list = [], class_models: list = [], class_interv: list = []):
-
     print(years)
 
     df = DataLoader.load_years(years)
@@ -134,11 +200,13 @@ def run_spark(years: list = [], reg_models: list = [], class_models: list = [], 
     df = DataTransformer.transform(df)
     df_train, df_test = df.randomSplit([0.7, 0.3])
 
-    reg_trained = RegressionHelper.train(df_train, reg_models)
-    class_trained = ClassificationHelper.train(df_train, reg_models)
+    reg_trainer = RegressionTrainer()
+    clas_trainer = ClassificationTrainer()
+    reg_trained = reg_trainer.train(df_train, reg_models)
+    class_trained = clas_trainer.train(df_train, reg_models)
 
-    reg_eval = RegressionHelper.test(df_test, reg_trained)
-    class_eval = ClassificationHelper.test(df_test, class_trained)
+    regression_evaluations = reg_trainer.test(df_test, reg_trained)
+    classification_evaluations = clas_trainer.test(df_test, class_trained)
 
     df.printSchema()
     print(df.count())
@@ -157,23 +225,34 @@ if __name__ == '__main__':
     parser.add_argument('-y', '--years', type=str,
                         help='Comma-separated list of years data to use. Values in range [1987, 2008]. Values between '
                              'commas can be simple or hyphen separated for ranges. e.g. 1991-1994,1999,2001-2003')
-    parser.add_argument('-r', '--regression', type=str, default='all',
+    parser.add_argument('-r', '--regressions', type=str, default='all',
                         help='Comma-separated list of regression methods to use. See help for all methods (default: %(default)s)')
-    parser.add_argument('-c', '--classification', type=str, default='all',
+    parser.add_argument('-c', '--classifications', type=str, default='all',
                         help='Comma-separated list of classification methods to use (default: %(default)s)')
     parser.add_argument('-ci', '--classification-interval', type=int, default=10,
                         help='When using classification methods, the interval of the categories in minutes (default: %(default)s)')
     args = parser.parse_args()
 
-    def years_parser(years_str: str):
+
+    def years_parser(years_str: str) -> list:
         years_list = []
         for y in years_str.split(','):
             if '-' not in y:
                 years_list.append(int(y))
             else:
                 i, e = tuple(y.split('-'))
-                years_list += [n for n in range(int(i), int(e)+1)]
+                years_list += [n for n in range(int(i), int(e) + 1)]
         return years_list
 
+
+    def models_parser(inp_str: str, models) -> list:
+        if inp_str == 'all':
+            return [k for k in models]
+        return inp_str.split(',')
+
+
     years = years_parser(args.years.strip())
-    run_spark(years)
+    regs = models_parser(args.regressions.strip(), RegressionTrainer.available_models)
+    classifs = models_parser(args.classifications.strip(), ClassificationTrainer.available_models)
+    class_int = args.classification_interval
+    run_spark(years=years, reg_models=regs, class_models=classifs, class_interv=class_int)
