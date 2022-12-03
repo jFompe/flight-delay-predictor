@@ -275,6 +275,8 @@ if __name__ == '__main__':
         return years_list
 
     def models_parser(inp_str: str, models) -> list:
+        if inp_str == 'none':
+            return []
         if inp_str == 'all':
             return [k for k in models]
         return inp_str.split(',')
