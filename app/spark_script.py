@@ -115,9 +115,7 @@ class DataTransformer:
 
     @staticmethod
     def _prepare_features_cols(df):
-        input_columns = ['Year', 'Month_vec', 'DayofMonth', 'DayOfWeek_vec', 'DepTime', 'CRSDepTime', 'CRSArrTime',
-                         'CRSElapsedTime', 'DepDelay', 'Distance', 'TaxiOut', 'UniqueCarrier_vec', 'FlightNum_vec',
-                         'TailNum_vec', 'Origin_vec', 'Dest_vec']
+        input_columns = ['DepTime', 'CRSDepTime', 'CRSArrTime', 'CRSElapsedTime', 'DepDelay', 'Distance', 'TaxiOut']
         output_column = "features"
 
         vector_a = VectorAssembler(inputCols=input_columns, outputCol=output_column)
