@@ -1,6 +1,6 @@
 # Big Data Flight Delay Predictor
 
-To test this programa just run
+To test this program, run the following commands:
 
 ```bash
 chmod +x run_pyspark.sh

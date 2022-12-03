@@ -14,16 +14,29 @@ import pyspark.sql.functions as F
 from pyspark.sql.functions import col, isnan, when, count, min, max
 from pyspark.sql.types import IntegerType
 
+# Initialize the Spark session
 spark = SparkSession.builder.config("spark.driver.memory", "12g").getOrCreate()
 
-
+'''
+Load data from csv files
+'''
 class DataLoader:
 
+    '''
+    Load all csv files corresponding to the selected years
+    :param years: List of year
+    :return: dataframe
+    '''
     @staticmethod
     def load_years(years: list):
         df = DataLoader._load_all_years(years)
         return df
 
+    '''
+    Load each csv files, year by year
+    :param years: List of year
+    :return: dataframe
+    '''
     @staticmethod
     def _load_all_years(years: list):
         df = DataLoader._load_one_year(years[0])
@@ -34,15 +47,28 @@ class DataLoader:
             df = df.unionByName(DataLoader._load_one_year(y))
         return df
 
+    '''
+    Load one csv file corresponding to a selected year
+    :param year: 
+    :return: dataframe
+    '''
     @staticmethod
     def _load_one_year(year: int):
         return spark.read.csv(f'app/data/{year}.csv', header=True)
 
 
+'''
+Clean data: remove forbidden variables and NA values
+'''
 class DataCleaner:
     ForbiddenVariables = ['ArrTime', 'ActualElapsedTime', 'AirTime', 'TaxiIn', 'Diverted', 'CarrierDelay',
                           'WeatherDelay', 'NASDelay', 'SecurityDelay', 'LateAircraftDelay']
 
+    '''
+    Clean the dataframe
+    :param df: 
+    :return: dataframe
+    '''
     @staticmethod
     def clean(df):
         df = DataCleaner._remove_forbidden(df)
@@ -50,16 +76,31 @@ class DataCleaner:
         df = DataCleaner._remove_nulls(df)
         return df
 
+    '''
+    Remove forbidden columns from the dataframe
+    :param df: 
+    :return: dataframe
+    '''
     @staticmethod
     def _remove_forbidden(df):
         return df.drop(*DataCleaner.ForbiddenVariables)
 
+    '''
+    Remove cancelled flights and cancel-related columns from the dataframe
+    :param df: 
+    :return: dataframe
+    '''
     @staticmethod
     def _remove_cancelled(df):
         df = df.filter(df.Cancelled == "0")
         df = df.drop('Cancelled', 'CancellationCode')
         return df
 
+    '''
+    Remove NA values from the dataframe
+    :param df: 
+    :return: dataframe
+    '''
     @staticmethod
     def _remove_nulls(df):
         # df = df.filter(col('ArrDelay').isNotNull())
@@ -67,10 +108,19 @@ class DataCleaner:
         df = df.dropna()
         return df
 
-
+'''
+Prepare data before processing
+'''
 class DataTransformer:
+    #All columns with numerical values
     IntColumns = ['Year', 'Month', 'DayofMonth', 'DayOfWeek', 'CRSElapsedTime', 'ArrDelay', 'DepDelay', 'Distance', 'TaxiOut']
 
+    '''
+    Transform the dataframe in order to facilitate its processing (later)
+    :param df: 
+    :param class_interv:
+    :return: dataframe
+    '''
     @staticmethod
     def transform(df, class_interv):
         df = DataTransformer._do_transform_time_to_mins(df)
@@ -81,10 +131,22 @@ class DataTransformer:
         df = DataTransformer._prepare_label_categories(df, class_interv)
         return df
 
+    '''
+    Transform the format time values from hhmm to hh*60+mm
+    :param df: 
+    :return: dataframe
+    '''
     @staticmethod
     def _do_transform_time_to_mins(df):
+        '''
+        Trnsform a time value from hhmm to hh*60+mm
+        :param df:
+        :return: time in minutes
+        '''
         def time_to_mins(t: str):
+            #Fill the value of time values that have less than 4 digits
             t = t.zfill(4)
+
             return int(t[:2]) * 60 + int(t[2:])
 
         time_to_mins_udf = F.udf(time_to_mins, IntegerType())
@@ -93,6 +155,11 @@ class DataTransformer:
         df = df.withColumn('CRSArrTime', time_to_mins_udf('CRSArrTime'))
         return df
 
+    '''
+    Cast string to integers
+    :param df:
+    :return: dataframe
+    '''
     @staticmethod
     def _do_cast_ints(df):
         for c in DataTransformer.IntColumns:
@@ -100,6 +167,11 @@ class DataTransformer:
         df = df.dropna()  # Casting may introduce some new null values in
         return df
 
+    '''
+    Process an One Hot Encoder on categorical columns
+    :param df:
+    :return: dataframe
+    '''
     @staticmethod
     def _one_hot_encode(df):
         categorical_columns = [item[0] for item in df.dtypes if item[1].startswith('string')]
@@ -112,6 +184,11 @@ class DataTransformer:
             df = one_hot_encoder.fit(df).transform(df)
         return df
 
+    '''
+    Assemble all selected columns into one vector
+    :param df:
+    :return: dataframe
+    '''
     @staticmethod
     def _prepare_features_cols(df):
         input_columns = ['DepTime', 'CRSDepTime', 'CRSArrTime', 'CRSElapsedTime', 'DepDelay', 'Distance', 'TaxiOut']
@@ -121,10 +198,20 @@ class DataTransformer:
         df = vector_a.transform(df)
         return df
 
+    '''
+    Select the features vector and ArrDelay column
+    :param df:
+    :return: dataframe
+    '''
     @staticmethod
     def _keep_train_cols_only(df):
         return df.select(['features', 'ArrDelay']).withColumnRenamed('ArrDelay', 'regressionLabel')
 
+    '''
+    Create categories based on a minute interval for Classifiers
+    :param df:
+    :return: dataframe
+    '''
     @staticmethod
     def _prepare_label_categories(df, interval):
         def category_from_delay(delay: int, interval: int):
@@ -139,13 +226,22 @@ class DataTransformer:
         df.groupBy('classLabel').count().show()
         return df
 
-
+'''
+Perform training and testing operations
+'''
 class Trainer:
     available_models = {}
     cross_validators = {}
     evaluator = None
     parallelism = 8
 
+    '''
+    Train a model or a cross-validator
+    :param df:
+    :param selected_models: List of models to perfom a fit function
+    :param use_cv: True if it is a cross validator, else False
+    :return: list of models after training
+    '''
     @classmethod
     def train(cls, df, selected_models, use_cv):
         if use_cv:
@@ -155,13 +251,21 @@ class Trainer:
             models = {k: trainers[k].fit(df) for k in trainers}
         return models
 
+    '''
+    Train a model or a cross-validator
+    :param df:
+    :param models: List of models to test and evaluate
+    :return: list of predictions and evaluations of all models
+    '''
     @classmethod
     def test(cls, df, models) -> tuple:
         predictions = {k: models[k].transform(df) for k in models}
         evaluations = {k: cls.evaluator.evaluate(predictions[k]) for k in predictions}
         return predictions, evaluations
 
-
+'''
+List of available Regression algorithms, their ParamGrids, their evaluator and their Cross-Validators
+'''
 class RegressionTrainer(Trainer):
     available_models = {
         'lr': LinearRegression(labelCol='regressionLabel'),
@@ -183,7 +287,9 @@ class RegressionTrainer(Trainer):
         'gbtr': CrossValidator(estimator=available_models['gbtr'], estimatorParamMaps=grids['gbtr'], evaluator=evaluator, parallelism=Trainer.parallelism),
     }
 
-
+'''
+List of available Classification algorithms, their ParamGrids, their evaluator and their Cross-Validators
+'''
 class ClassificationTrainer(Trainer):
     available_models = {
         'mlr': LogisticRegression(labelCol='classLabel'),
@@ -214,7 +320,14 @@ class ClassificationTrainer(Trainer):
         'nbc': CrossValidator(estimator=available_models['nbc'], estimatorParamMaps=grids['nbc'], evaluator=evaluator, parallelism=Trainer.parallelism),
     }
 
-
+'''
+Run the Spark application
+:param years: List of selected years, empty by default
+:param years: List of selected Regression models, empty by default
+:param years: List of selected Classification models, empty by default
+:param years: Minute interval for each class (for Classification models), 10 by default
+:param years: True if the program use Cross Validators, else False, True by default
+'''
 def run_spark(years: list = [], reg_models: list = [], class_models: list = [], class_interv: int = 10, use_cross_val=True):
 
     df = DataLoader.load_years(years)
@@ -246,7 +359,9 @@ def run_spark(years: list = [], reg_models: list = [], class_models: list = [], 
 
     exit(0)
 
-
+'''
+Main function. Parse arguments passed to the program, then call run_spark()
+'''
 if __name__ == '__main__':
     SCRIPT_NAME = os.path.basename(__file__)
     # TODO Add the other models
