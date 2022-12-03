@@ -2,6 +2,8 @@ import os
 import argparse as ap
 from argparse import RawDescriptionHelpFormatter
 
+from pyspark.ml.tuning import ParamGridBuilder, CrossValidator
+
 from pyspark.ml.classification import LogisticRegression, DecisionTreeClassifier, RandomForestClassifier, \
     GBTClassifier, MultilayerPerceptronClassifier, LinearSVC, NaiveBayes
 from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler
@@ -9,10 +11,10 @@ from pyspark.ml.regression import LinearRegression, RandomForestRegressor, Decis
 from pyspark.ml.evaluation import RegressionEvaluator, MulticlassClassificationEvaluator
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
-from pyspark.sql.functions import col, isnan, when, count
+from pyspark.sql.functions import col, isnan, when, count, min, max
 from pyspark.sql.types import IntegerType
 
-spark = SparkSession.builder.getOrCreate()
+spark = SparkSession.builder.config("spark.driver.memory", "12g").getOrCreate()
 
 
 class DataLoader:
@@ -70,12 +72,13 @@ class DataTransformer:
     IntColumns = ['Year', 'Month', 'DayofMonth', 'DayOfWeek', 'CRSElapsedTime', 'ArrDelay', 'DepDelay', 'Distance', 'TaxiOut']
 
     @staticmethod
-    def transform(df):
+    def transform(df, class_interv):
         df = DataTransformer._do_transform_time_to_mins(df)
         df = DataTransformer._do_cast_ints(df)
         df = DataTransformer._one_hot_encode(df)
         df = DataTransformer._prepare_features_cols(df)
         df = DataTransformer._keep_train_cols_only(df)
+        df = DataTransformer._prepare_label_categories(df, class_interv)
         return df
 
     @staticmethod
@@ -103,12 +106,8 @@ class DataTransformer:
         for c in categorical_columns:
             string_indexer = StringIndexer(inputCol=c, outputCol=c + "Index")
             df = string_indexer.fit(df).transform(df)
-        df = df.withColumnRenamed('Month', 'MonthIndex')
-        df = df.withColumnRenamed('DayOfWeek', 'DayOfWeekIndex')
 
-        df.select([count(when(isnan(c) | col(c).isNull(), c)).alias(c) for c in df.columns]).show()
-
-        for column in categorical_columns + ['Month', 'DayOfWeek']:
+        for column in categorical_columns:
             one_hot_encoder = OneHotEncoder(inputCol=column + "Index", outputCol=column + "_vec")
             df = one_hot_encoder.fit(df).transform(df)
         return df
@@ -124,120 +123,126 @@ class DataTransformer:
 
     @staticmethod
     def _keep_train_cols_only(df):
-        return df.select(['features', 'ArrDelay']).withColumnRenamed('ArrDelay', 'label')
+        return df.select(['features', 'ArrDelay']).withColumnRenamed('ArrDelay', 'regressionLabel')
+
+    @staticmethod
+    def _prepare_label_categories(df, interval):
+        def category_from_delay(delay: int, interval: int):
+            if delay <= 0:
+                return 0
+            if delay >= 180:
+                return 180 // interval + 1
+            return delay // interval + 1
+
+        category_from_delay_udf = F.udf(lambda x: category_from_delay(x, interval), IntegerType())
+        df = df.withColumn('classLabel', category_from_delay_udf('regressionLabel'))
+        df.groupBy('classLabel').count().show()
+        return df
 
 
 class Trainer:
     available_models = {}
+    cross_validators = {}
     evaluator = None
+    parallelism = 8
 
     @classmethod
-    def train(cls, df, selected_models):
-        trainers = {k: cls.available_models[k] for k in selected_models}
-        models = {k: trainers[k].fit(df) for k in trainers}
+    def train(cls, df, selected_models, use_cv):
+        if use_cv:
+            models = {k: cls.cross_validators[k].fit(df) for k in selected_models}
+        else:
+            trainers = {k: cls.available_models[k] for k in selected_models}
+            models = {k: trainers[k].fit(df) for k in trainers}
         return models
 
     @classmethod
-    def test(cls, df, models):
+    def test(cls, df, models) -> tuple:
         predictions = {k: models[k].transform(df) for k in models}
         evaluations = {k: cls.evaluator.evaluate(predictions[k]) for k in predictions}
-        return evaluations
+        return predictions, evaluations
 
 
 class RegressionTrainer(Trainer):
     available_models = {
-        'lr': LinearRegression(featuresCol='features', labelCol='label'),
-        'dtr': DecisionTreeRegressor(),
-        'rfr': RandomForestRegressor(featuresCol='features'),
-        'gbtr': GBTRegressor()
+        'lr': LinearRegression(labelCol='regressionLabel'),
+        'dtr': DecisionTreeRegressor(labelCol='regressionLabel'),
+        'rfr': RandomForestRegressor(labelCol='regressionLabel'),
+        'gbtr': GBTRegressor(labelCol='regressionLabel')
     }
-    evaluator = RegressionEvaluator()
+    grids = {
+        'lr': ParamGridBuilder().addGrid(available_models['lr'].regParam, [0.0, 0.1]).build(),
+        'dtr': ParamGridBuilder().addGrid(available_models['dtr'].maxDepth, [3, 5, 7]).addGrid(available_models['dtr'].maxBins, [8, 16, 32]).build(),
+        'rfr': ParamGridBuilder().addGrid(available_models['dtr'].maxDepth, [3, 5, 7]).addGrid(available_models['dtr'].maxBins, [8, 16, 32]).build(),
+        'gbtr': ParamGridBuilder().addGrid(available_models['dtr'].maxDepth, [3, 5, 7]).addGrid(available_models['dtr'].maxBins, [8, 16, 32]).build(),
+    }
+    evaluator = RegressionEvaluator(labelCol='regressionLabel')
+    cross_validators = {
+        'lr': CrossValidator(estimator=available_models['lr'], estimatorParamMaps=grids['lr'], evaluator=evaluator, parallelism=Trainer.parallelism),
+        'dtr': CrossValidator(estimator=available_models['dtr'], estimatorParamMaps=grids['dtr'], evaluator=evaluator, parallelism=Trainer.parallelism),
+        'rfr': CrossValidator(estimator=available_models['rfr'], estimatorParamMaps=grids['rfr'], evaluator=evaluator, parallelism=Trainer.parallelism),
+        'gbtr': CrossValidator(estimator=available_models['gbtr'], estimatorParamMaps=grids['gbtr'], evaluator=evaluator, parallelism=Trainer.parallelism),
+    }
 
 
 class ClassificationTrainer(Trainer):
     available_models = {
-        'mlr': LogisticRegression(),
-        'dtc': DecisionTreeClassifier(),
-        'rfc': RandomForestClassifier(),
-        'gbtc': GBTClassifier(),
-        'mlpc': MultilayerPerceptronClassifier(),
-        'lsvc': LinearSVC(),
-        'nbc': NaiveBayes()
+        'mlr': LogisticRegression(labelCol='classLabel'),
+        'dtc': DecisionTreeClassifier(labelCol='classLabel'),
+        'rfc': RandomForestClassifier(labelCol='classLabel'),
+        'gbtc': GBTClassifier(labelCol='classLabel'),
+        'mlpc': MultilayerPerceptronClassifier(labelCol='classLabel'),
+        'lsvc': LinearSVC(labelCol='classLabel'),
+        'nbc': NaiveBayes(labelCol='classLabel')
+    }
+    grids = {
+        'mlr': ParamGridBuilder().addGrid(available_models['mlr'].regParam, [0.0, 0.1]).build(),
+        'dtc': ParamGridBuilder().addGrid(available_models['dtc'].maxDepth, [3, 5, 7]).addGrid(available_models['dtc'].maxBins, [8, 16, 32]).build(),
+        'rfc': ParamGridBuilder().addGrid(available_models['rfc'].maxDepth, [3, 5, 7]).addGrid(available_models['rfc'].maxBins, [8, 16, 32]).build(),
+        'gbtc': ParamGridBuilder().addGrid(available_models['gbtc'].maxDepth, [3, 5, 7]).addGrid(available_models['gbtc'].maxBins, [8, 16, 32]).build(),
+        'mlpc': ParamGridBuilder().addGrid(available_models['mlpc'].tol, [1e-06, 1e-07]).build(),
+        'lsvc': ParamGridBuilder().addGrid(available_models['lsvc'].regParam, [0.0, 0.1]).addGrid(available_models['lsvc'].tol, [1e-06, 1e-07]).build(),
+        'nbc': ParamGridBuilder().addGrid(available_models['nbc'].smoothing, [0.8, 1.0]).build(),
     }
     evaluator = MulticlassClassificationEvaluator()
-
-
-'''
-class RegressionHelper:
-    regressions = {
-        'lr': LinearRegression(featuresCol='features', labelCol='label'),
-        'dtr': DecisionTreeRegressor(),
-        'rfr': RandomForestRegressor(featuresCol='features'),
-        'gbtr': GBTRegressor()
+    cross_validators = {
+        'mlr': CrossValidator(estimator=available_models['mlr'], estimatorParamMaps=grids['mlr'], evaluator=evaluator, parallelism=Trainer.parallelism),
+        'dtc': CrossValidator(estimator=available_models['dtc'], estimatorParamMaps=grids['dtc'], evaluator=evaluator, parallelism=Trainer.parallelism),
+        'rfc': CrossValidator(estimator=available_models['rfc'], estimatorParamMaps=grids['rfc'], evaluator=evaluator, parallelism=Trainer.parallelism),
+        'gbtc': CrossValidator(estimator=available_models['gbtc'], estimatorParamMaps=grids['gbtc'], evaluator=evaluator, parallelism=Trainer.parallelism),
+        'mlpc': CrossValidator(estimator=available_models['mlpc'], estimatorParamMaps=grids['mlpc'], evaluator=evaluator, parallelism=Trainer.parallelism),
+        'lsvc': CrossValidator(estimator=available_models['lsvc'], estimatorParamMaps=grids['lsvc'], evaluator=evaluator, parallelism=Trainer.parallelism),
+        'nbc': CrossValidator(estimator=available_models['nbc'], estimatorParamMaps=grids['nbc'], evaluator=evaluator, parallelism=Trainer.parallelism),
     }
-    evaluator = RegressionEvaluator()
-
-    @staticmethod
-    def train(df, selected_models) -> dict:
-        regressors = {k: RegressionHelper.regressions[k] for k in selected_models}
-        models = {k: regressors[k].fit(df) for k in regressors}
-        return models
-
-    @staticmethod
-    def test(df, models) -> dict:
-        predictions = {k: models[k].transform(df) for k in models}
-        evaluations = {k: RegressionHelper.evaluator.evaluate(df, predictions[k]) for k in predictions}
-        return evaluations
 
 
-class ClassificationHelper:
-    classifications = {
-        'mlr': LogisticRegression(),
-        'dtc': DecisionTreeClassifier(),
-        'rfc': RandomForestClassifier(),
-        'gbtc': GBTClassifier(),
-        'mlpc': MultilayerPerceptronClassifier(),
-        'lsvc': LinearSVC(),
-        'nbc': NaiveBayes()
-    }
-    evaluator = MulticlassClassificationEvaluator()
-
-    @staticmethod
-    def train(df, selected_models) -> dict:
-        classifiers = {k: ClassificationHelper.classifications[k] for k in selected_models}
-        models = {k: classifiers[k].fit(df) for k in classifiers}
-        return models
-
-    @staticmethod
-    def test(df, models) -> dict:
-        predictions = {k: models[k].transform(df) for k in models}
-        evaluations = {k: ClassificationHelper.evaluator.evaluate(df, predictions[k]) for k in predictions}
-        return evaluations
-'''
-
-
-def run_spark(years: list = [], reg_models: list = [], class_models: list = [], class_interv: list = []):
-    print(years)
+def run_spark(years: list = [], reg_models: list = [], class_models: list = [], class_interv: int = 10, use_cross_val=True):
 
     df = DataLoader.load_years(years)
     df = DataCleaner.clean(df)
-    df = DataTransformer.transform(df)
+    df = DataTransformer.transform(df, class_interv)
     df_train, df_test = df.randomSplit([0.7, 0.3])
 
     reg_trainer = RegressionTrainer()
     clas_trainer = ClassificationTrainer()
-    reg_trained = reg_trainer.train(df_train, reg_models)
-    #class_trained = clas_trainer.train(df_train, class_models)
+    reg_trained = reg_trainer.train(df_train, reg_models, use_cross_val)
+    class_trained = clas_trainer.train(df_train, class_models, use_cross_val)
 
-    # TODO Classification models
-
-    regression_evaluations = reg_trainer.test(df_test, reg_trained)
-    #classification_evaluations = clas_trainer.test(df_test, class_trained)
+    reg_preds, reg_evals = reg_trainer.test(df_test, reg_trained)
+    cls_preds, cls_evals = clas_trainer.test(df_test, class_trained)
 
     df.printSchema()
     print(df.count())
     df.show(20)
-    print(regression_evaluations)
+    print(reg_evals)
+    print(cls_evals)
+
+    for rp in reg_preds.values():
+        rp.show()
+    for cp in cls_preds.values():
+        cp.show()
+
+    for k in reg_evals:
+        print(k, reg_evals[k])
 
 
 if __name__ == '__main__':
@@ -258,6 +263,8 @@ if __name__ == '__main__':
                         help='Comma-separated list of classification methods to use (default: %(default)s)')
     parser.add_argument('-ci', '--classification-interval', type=int, default=10,
                         help='When using classification methods, the interval of the categories in minutes (default: %(default)s)')
+    parser.add_argument('-cv', '--cross-validation', default=False, action='store_true',
+                        help='Enable cross validation in all trained models')
     args = parser.parse_args()
 
 
