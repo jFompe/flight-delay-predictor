@@ -244,6 +244,8 @@ def run_spark(years: list = [], reg_models: list = [], class_models: list = [], 
     for k in reg_evals:
         print(k, reg_evals[k])
 
+    exit(0)
+
 
 if __name__ == '__main__':
     SCRIPT_NAME = os.path.basename(__file__)
