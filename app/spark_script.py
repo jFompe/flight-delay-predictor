@@ -1,6 +1,5 @@
 import os
 import argparse as ap
-import sys
 from argparse import RawDescriptionHelpFormatter
 
 from pyspark.ml.classification import LogisticRegression, DecisionTreeClassifier, RandomForestClassifier, \
