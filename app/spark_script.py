@@ -232,7 +232,7 @@ Perform training and testing operations
 class Trainer:
     available_models = {}
     cross_validators = {}
-    evaluator = None
+    evaluators = {}
     parallelism = 8
 
     '''
@@ -260,7 +260,7 @@ class Trainer:
     @classmethod
     def test(cls, df, models) -> tuple:
         predictions = {k: models[k].transform(df) for k in models}
-        evaluations = {k: cls.evaluator.evaluate(predictions[k]) for k in predictions}
+        evaluations = {f'{k}-{ev}': cls.evaluators[ev].evaluate(predictions[k]) for k in predictions for ev in cls.evaluators}
         return predictions, evaluations
 
 '''
@@ -279,12 +279,16 @@ class RegressionTrainer(Trainer):
         'rfr': ParamGridBuilder().addGrid(available_models['dtr'].maxDepth, [3, 5, 7]).addGrid(available_models['dtr'].maxBins, [8, 16, 32]).build(),
         'gbtr': ParamGridBuilder().addGrid(available_models['dtr'].maxDepth, [3, 5, 7]).addGrid(available_models['dtr'].maxBins, [8, 16, 32]).build(),
     }
-    evaluator = RegressionEvaluator(labelCol='regressionLabel')
+    evaluators = {
+        'rmse': RegressionEvaluator(labelCol='regressionLabel', metricName='rmse'),
+        'mse': RegressionEvaluator(labelCol='regressionLabel', metricName='mse'),
+        'r2': RegressionEvaluator(labelCol='regressionLabel', metricName='r2')
+    }
     cross_validators = {
-        'lr': CrossValidator(estimator=available_models['lr'], estimatorParamMaps=grids['lr'], evaluator=evaluator, parallelism=Trainer.parallelism),
-        'dtr': CrossValidator(estimator=available_models['dtr'], estimatorParamMaps=grids['dtr'], evaluator=evaluator, parallelism=Trainer.parallelism),
-        'rfr': CrossValidator(estimator=available_models['rfr'], estimatorParamMaps=grids['rfr'], evaluator=evaluator, parallelism=Trainer.parallelism),
-        'gbtr': CrossValidator(estimator=available_models['gbtr'], estimatorParamMaps=grids['gbtr'], evaluator=evaluator, parallelism=Trainer.parallelism),
+        'lr': CrossValidator(estimator=available_models['lr'], estimatorParamMaps=grids['lr'], evaluator=evaluators['rmse'], parallelism=Trainer.parallelism),
+        'dtr': CrossValidator(estimator=available_models['dtr'], estimatorParamMaps=grids['dtr'], evaluator=evaluators['rmse'], parallelism=Trainer.parallelism),
+        'rfr': CrossValidator(estimator=available_models['rfr'], estimatorParamMaps=grids['rfr'], evaluator=evaluators['rmse'], parallelism=Trainer.parallelism),
+        'gbtr': CrossValidator(estimator=available_models['gbtr'], estimatorParamMaps=grids['gbtr'], evaluator=evaluators['rmse'], parallelism=Trainer.parallelism),
     }
 
 '''
