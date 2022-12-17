@@ -325,52 +325,6 @@ class ClassificationTrainer(Trainer):
     }
 
 
-def show_graphics():
-    evaluations = {
-        'lr-rmse': 10.68,
-        'lr-mse': 114.01,
-        'lr-r2': 0.93,
-        'dtr-rmse': 16.64,
-        'dtr-mse': 276.85,
-        'dtr-r2': 0.82,
-        'rfr-rmse': 18.50,
-        'rfr-mse': 342.48,
-        'rfr-r2': 0.78,
-        'gbtr-rmse': 16.30,
-        'gbtr-mse': 265.72,
-        'gbtr-r2': 0.83
-    }
-
-    models = set([k.split('-')[0] for k in evaluations])
-    metrics = set([k.split('-')[1] for k in evaluations])
-
-
-    for metric in metrics:
-
-    X = np.arange(len(metrics))
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    width = 1 / len(metrics)
-
-    colors = ['r', 'g', 'b', 'y']
-
-    data = [[evaluations[f'{mo}-{me}'] for me in metrics] for mo in models]
-    print(data)
-
-    for i, model in enumerate(models):
-        ax.bar(X + i * width, data[i], color=colors[i], width=width)
-
-    ax.set_xlabel('Metrics')
-    ax.set_ylabel('Value')
-    plt.xticks(X, metrics)
-    plt.legend(models)
-
-    fig.savefig('/tmp/graphics/foo.png')
-    plt.close(fig)
-
-
-
-
 '''
 Run the Spark application
 :param years: List of selected years, empty by default
