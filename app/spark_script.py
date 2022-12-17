@@ -342,6 +342,17 @@ class ClassificationTrainer(Trainer):
     }
 
 
+class ParamTuning:
+
+    @staticmethod
+    def show_best(title, trained_models):
+        print('-' * 20)
+        print(f'Best params extracted from Cross-Validation for {title}')
+        for name, model in trained_models.items():
+            print(name, model.getEstimatorParamMaps()[np.argmax(model.avgMetrics)])
+        print('-' * 20)
+
+
 '''
 Run the Spark application
 :param years: List of selected years, empty by default
@@ -358,13 +369,14 @@ def run_spark(years: list = [], reg_models: list = [], class_models: list = [], 
     df = DataExplorer.explore(df)
     df_train, df_test = df.randomSplit([0.7, 0.3])
 
-    reg_trainer = RegressionTrainer()
-    clas_trainer = ClassificationTrainer()
-    reg_trained = reg_trainer.train(df_train, reg_models, use_cross_val)
-    class_trained = clas_trainer.train(df_train, class_models, use_cross_val)
+    reg_trained = RegressionTrainer.train(df_train, reg_models, use_cross_val)
+    class_trained = ClassificationTrainer.train(df_train, class_models, use_cross_val)
+    if use_cross_val:
+        ParamTuning.show_best('Regression models', reg_trained)
+        ParamTuning.show_best('Classification models', class_trained)
 
-    reg_preds, reg_evals = reg_trainer.test(df_test, reg_trained)
-    cls_preds, cls_evals = clas_trainer.test(df_test, class_trained)
+    reg_preds, reg_evals = RegressionTrainer.test(df_test, reg_trained)
+    cls_preds, cls_evals = ClassificationTrainer.test(df_test, class_trained)
 
     df.printSchema()
     print(df.count())
