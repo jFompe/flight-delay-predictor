@@ -1,6 +1,8 @@
 import os
 import argparse as ap
 from argparse import RawDescriptionHelpFormatter
+import matplotlib.pyplot as plt
+import numpy as np
 
 from pyspark.ml.tuning import ParamGridBuilder, CrossValidator
 
@@ -9,6 +11,7 @@ from pyspark.ml.classification import LogisticRegression, DecisionTreeClassifier
 from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler
 from pyspark.ml.regression import LinearRegression, RandomForestRegressor, DecisionTreeRegressor, GBTRegressor
 from pyspark.ml.evaluation import RegressionEvaluator, MulticlassClassificationEvaluator
+from pyspark.ml.stat import Correlation
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
 from pyspark.sql.functions import col, isnan, when, count, min, max
@@ -127,6 +130,7 @@ class DataTransformer:
     def transform(df, class_interv):
         df = DataTransformer._do_transform_time_to_mins(df)
         df = DataTransformer._do_cast_ints(df)
+        DataExplorer.explore(df)
         df = DataTransformer._one_hot_encode(df)
         df = DataTransformer._prepare_features_cols(df)
         df = DataTransformer._keep_train_cols_only(df)
@@ -235,13 +239,53 @@ class DataExplorer:
 
     @staticmethod
     def explore(df):
-        DataExplorer.correlation_matrix(df)
-        return df
+        corr_matrix = DataExplorer.correlation_matrix(df)
+        DataExplorer.correlation_matrix_graph(corr_matrix)
+        DataExplorer.scatter_plot(df)
 
     @staticmethod
     def correlation_matrix(df):
-        corr_matrix = Correlation.corr(df, 'features', 'pearson').collect()[0][0]
+        vector_a = VectorAssembler(inputCols=DataTransformer.IntColumns + ['ArrDelay'], outputCol='all_cols')
+        df2 = vector_a.transform(df)
+        corr_matrix = Correlation.corr(df2, 'all_cols', 'pearson').collect()[0][0]
         print(str(corr_matrix).replace('nan', 'NaN'))
+        return corr_matrix
+
+    @staticmethod
+    def correlation_matrix_graph(corr):
+        corr_list = np.round(corr.toArray(), 2).tolist()
+        cols = DataTransformer.IntColumns + ['ArrDelay']
+
+        fig, ax = plt.subplots()
+        im = ax.imshow(corr_list, interpolation='nearest', cmap="bwr")
+        plt.xticks(np.arange(len(cols)), cols)
+        plt.yticks(np.arange(len(cols)), cols)
+
+        # Rotate the tick labels and set their alignment.
+        plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+
+        # Loop over data dimensions and create text annotations.
+        for i in range(len(cols)):
+            for j in range(len(cols)):
+                ax.text(j, i, corr_list[i][j], ha="center", va="center", color="black")
+
+        ax.set_title("Correlation matrix of selected variables")
+        fig.tight_layout()
+        plt.savefig('/tmp/graphics/corr.png')
+        plt.close()
+
+    @staticmethod
+    def scatter_plot(df):
+        arr_delays = df.select(F.collect_list('ArrDelay')).first()[0]
+        dep_delays = df.select(F.collect_list('DepDelay')).first()[0]
+
+        plt.title('Flights Arrival Delay vs Departure Delay')
+        plt.xlabel('ArrDelay')
+        plt.ylabel('DepDelay')
+
+        plt.scatter(arr_delays, dep_delays, cmap="bwr")
+        plt.savefig('/tmp/graphics/scatter.png')
+        plt.close()
 
 
 '''
@@ -367,7 +411,6 @@ def run_spark(years: list = [], reg_models: list = [], class_models: list = [], 
     df = DataLoader.load_years(years)
     df = DataCleaner.clean(df)
     df = DataTransformer.transform(df, class_interv)
-    df = DataExplorer.explore(df)
     df_train, df_test = df.randomSplit([0.7, 0.3])
 
     reg_trained = RegressionTrainer.train(df_train, reg_models, use_cross_val)
