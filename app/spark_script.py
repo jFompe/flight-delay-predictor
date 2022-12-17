@@ -112,8 +112,10 @@ class DataCleaner:
 Prepare data before processing
 '''
 class DataTransformer:
-    #All columns with numerical values
+    # All columns with numerical values
     IntColumns = ['Year', 'Month', 'DayofMonth', 'DayOfWeek', 'CRSElapsedTime', 'ArrDelay', 'DepDelay', 'Distance', 'TaxiOut']
+    # All columns to be used as input for the models
+    InputColumns = ['DepTime', 'CRSDepTime', 'CRSArrTime', 'CRSElapsedTime', 'DepDelay', 'Distance', 'TaxiOut']
 
     '''
     Transform the dataframe in order to facilitate its processing (later)
@@ -191,10 +193,9 @@ class DataTransformer:
     '''
     @staticmethod
     def _prepare_features_cols(df):
-        input_columns = ['DepTime', 'CRSDepTime', 'CRSArrTime', 'CRSElapsedTime', 'DepDelay', 'Distance', 'TaxiOut']
         output_column = "features"
 
-        vector_a = VectorAssembler(inputCols=input_columns, outputCol=output_column)
+        vector_a = VectorAssembler(inputCols=DataTransformer.InputColumns, outputCol=output_column)
         df = vector_a.transform(df)
         return df
 
