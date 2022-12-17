@@ -229,6 +229,20 @@ class DataTransformer:
         print('-' * 20)
         return df
 
+
+class DataExplorer:
+
+    @staticmethod
+    def explore(df):
+        DataExplorer.correlation_matrix(df)
+        return df
+
+    @staticmethod
+    def correlation_matrix(df):
+        corr_matrix = Correlation.corr(df, 'features', 'pearson').collect()[0][0]
+        print(str(corr_matrix).replace('nan', 'NaN'))
+
+
 '''
 Perform training and testing operations
 '''
@@ -341,6 +355,7 @@ def run_spark(years: list = [], reg_models: list = [], class_models: list = [], 
     df = DataLoader.load_years(years)
     df = DataCleaner.clean(df)
     df = DataTransformer.transform(df, class_interv)
+    df = DataExplorer.explore(df)
     df_train, df_test = df.randomSplit([0.7, 0.3])
 
     reg_trainer = RegressionTrainer()
