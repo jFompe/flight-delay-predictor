@@ -223,7 +223,10 @@ class DataTransformer:
 
         category_from_delay_udf = F.udf(lambda x: category_from_delay(x, interval), IntegerType())
         df = df.withColumn('classLabel', category_from_delay_udf('regressionLabel'))
+        print('-' * 20)
+        print('Number of entries per class')
         df.groupBy('classLabel').count().show()
+        print('-' * 20)
         return df
 
 '''
