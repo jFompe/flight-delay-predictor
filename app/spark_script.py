@@ -252,6 +252,7 @@ class DataExplorer:
         corr_matrix = DataExplorer.correlation_matrix(df)
         DataExplorer.correlation_matrix_graph(corr_matrix)
         DataExplorer.scatter_plot(df)
+        df.select(*DataTransformer.InputColumns).summary().show()
 
     @staticmethod
     def correlation_matrix(df):
