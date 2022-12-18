@@ -7,7 +7,7 @@ import numpy as np
 from pyspark.ml.tuning import ParamGridBuilder, CrossValidator
 
 from pyspark.ml.classification import LogisticRegression, DecisionTreeClassifier, RandomForestClassifier, \
-    MultilayerPerceptronClassifier, LinearSVC, NaiveBayes
+    MultilayerPerceptronClassifier, NaiveBayes
 from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler
 from pyspark.ml.regression import LinearRegression, RandomForestRegressor, DecisionTreeRegressor, GBTRegressor
 from pyspark.ml.evaluation import RegressionEvaluator, MulticlassClassificationEvaluator
@@ -364,7 +364,6 @@ class ClassificationTrainer(Trainer):
         'dtc': DecisionTreeClassifier(labelCol='classLabel'),
         'rfc': RandomForestClassifier(labelCol='classLabel'),
         'mlpc': MultilayerPerceptronClassifier(labelCol='classLabel'),
-        'lsvc': LinearSVC(labelCol='classLabel'),
         'nbc': NaiveBayes(labelCol='classLabel')
     }
     grids = {
@@ -372,7 +371,6 @@ class ClassificationTrainer(Trainer):
         'dtc': ParamGridBuilder().addGrid(available_models['dtc'].maxDepth, [3, 5, 7]).addGrid(available_models['dtc'].maxBins, [8, 16, 32]).build(),
         'rfc': ParamGridBuilder().addGrid(available_models['rfc'].maxDepth, [3, 5, 7]).addGrid(available_models['rfc'].maxBins, [8, 16, 32]).build(),
         'mlpc': ParamGridBuilder().addGrid(available_models['mlpc'].tol, [1e-06, 1e-07]).build(),
-        'lsvc': ParamGridBuilder().addGrid(available_models['lsvc'].regParam, [0.0, 0.1]).addGrid(available_models['lsvc'].tol, [1e-06, 1e-07]).build(),
         'nbc': ParamGridBuilder().addGrid(available_models['nbc'].smoothing, [0.8, 1.0]).build(),
     }
     evaluators = {
@@ -385,7 +383,6 @@ class ClassificationTrainer(Trainer):
         'dtc': CrossValidator(estimator=available_models['dtc'], estimatorParamMaps=grids['dtc'], evaluator=evaluators['f1'], parallelism=Trainer.parallelism),
         'rfc': CrossValidator(estimator=available_models['rfc'], estimatorParamMaps=grids['rfc'], evaluator=evaluators['f1'], parallelism=Trainer.parallelism),
         'mlpc': CrossValidator(estimator=available_models['mlpc'], estimatorParamMaps=grids['mlpc'], evaluator=evaluators['f1'], parallelism=Trainer.parallelism),
-        'lsvc': CrossValidator(estimator=available_models['lsvc'], estimatorParamMaps=grids['lsvc'], evaluator=evaluators['f1'], parallelism=Trainer.parallelism),
         'nbc': CrossValidator(estimator=available_models['nbc'], estimatorParamMaps=grids['nbc'], evaluator=evaluators['f1'], parallelism=Trainer.parallelism),
     }
 
