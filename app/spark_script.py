@@ -8,7 +8,7 @@ from pyspark.ml.tuning import ParamGridBuilder, CrossValidator
 
 from pyspark.ml.classification import LogisticRegression, DecisionTreeClassifier, RandomForestClassifier, \
     MultilayerPerceptronClassifier, NaiveBayes
-from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler
+from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler, MinMaxScaler
 from pyspark.ml.regression import LinearRegression, RandomForestRegressor, DecisionTreeRegressor, GBTRegressor
 from pyspark.ml.evaluation import RegressionEvaluator, MulticlassClassificationEvaluator
 from pyspark.ml.stat import Correlation
@@ -136,6 +136,7 @@ class DataTransformer:
         df = DataTransformer._one_hot_encode(df)
         df = DataTransformer._prepare_features_cols(df)
         df = DataTransformer._keep_train_cols_only(df)
+        df = DataTransformer._scale(df)
         df = DataTransformer._prepare_label_categories(df, class_interv)
         return df
 
@@ -213,6 +214,13 @@ class DataTransformer:
     @staticmethod
     def _keep_train_cols_only(df):
         return df.select(['features', 'ArrDelay']).withColumnRenamed('ArrDelay', 'regressionLabel')
+
+    @staticmethod
+    def _scale(df):
+        df = df.withColumnRenamed('features', 'featuresB4Scale')
+        scaler = MinMaxScaler(inputCol='featuresB4Scale', outputCol='features')
+        df = scaler.fit(df).transform(df)
+        return df
 
     '''
     Create categories based on a minute interval for Classifiers
