@@ -14,7 +14,6 @@ from pyspark.ml.evaluation import RegressionEvaluator, MulticlassClassificationE
 from pyspark.ml.stat import Correlation
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
-from pyspark.sql.functions import col, isnan, when, count, min, max
 from pyspark.sql.types import IntegerType
 
 # Initialize the Spark session
@@ -106,8 +105,8 @@ class DataCleaner:
     '''
     @staticmethod
     def _remove_nulls(df):
-        # df = df.filter(col('ArrDelay').isNotNull())
-        # df = df.filter(col('CRSElapsedTime').isNotNull())
+        # df = df.filter(F.col('ArrDelay').isNotNull())
+        # df = df.filter(F.col('CRSElapsedTime').isNotNull())
         df = df.dropna()
         return df
 
@@ -170,7 +169,7 @@ class DataTransformer:
     @staticmethod
     def _do_cast_ints(df):
         for c in DataTransformer.IntColumns:
-            df = df.withColumn(c, col(c).cast('int'))
+            df = df.withColumn(c, F.col(c).cast('int'))
         df = df.dropna()  # Casting may introduce some new null values in
         return df
 
