@@ -185,11 +185,11 @@ class DataTransformer:
     def _one_hot_encode(df):
         categorical_columns = [item[0] for item in df.dtypes if item[1].startswith('string')]
         for c in categorical_columns:
-            string_indexer = StringIndexer(inputCol=c, outputCol=c + "Index")
+            string_indexer = StringIndexer(inputCol=c, outputCol=c + "Index", handleInvalid='skip')
             df = string_indexer.fit(df).transform(df)
 
         for column in categorical_columns:
-            one_hot_encoder = OneHotEncoder(inputCol=column + "Index", outputCol=column + "_vec")
+            one_hot_encoder = OneHotEncoder(inputCol=column + "Index", outputCol=column + "_vec", handleInvalid='keep')
             df = one_hot_encoder.fit(df).transform(df)
         return df
 
