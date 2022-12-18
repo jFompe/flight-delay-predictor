@@ -419,17 +419,18 @@ def run_spark(years: list = [], reg_models: list = [], class_models: list = [], 
     df = DataTransformer.transform(df, class_interv)
     df_train, df_test = df.randomSplit([0.7, 0.3])
 
+    print('Beggining training')
     reg_trained = RegressionTrainer.train(df_train, reg_models, use_cross_val)
     class_trained = ClassificationTrainer.train(df_train, class_models, use_cross_val)
     if use_cross_val:
+        print('Showing best parameters')
         ParamTuning.show_best('Regression models', reg_trained)
         ParamTuning.show_best('Classification models', class_trained)
 
+    print('Beggining testing')
     reg_preds, reg_evals = RegressionTrainer.test(df_test, reg_trained)
     cls_preds, cls_evals = ClassificationTrainer.test(df_test, class_trained)
 
-    df.printSchema()
-    print(df.count())
     df.show(20)
     print(reg_evals)
     print(cls_evals)
@@ -441,8 +442,11 @@ def run_spark(years: list = [], reg_models: list = [], class_models: list = [], 
 
     for k in reg_evals:
         print(k, reg_evals[k])
+    for k in cls_evals:
+        print(k, cls_evals[k])
 
     exit(0)
+
 
 '''
 Main function. Parse arguments passed to the program, then call run_spark()
