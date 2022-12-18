@@ -18,6 +18,8 @@ from pyspark.sql.types import IntegerType
 
 # Initialize the Spark session
 spark = SparkSession.builder.config("spark.driver.memory", "12g").getOrCreate()
+spark.sparkContext.setLogLevel('WARN')
+
 
 '''
 Load data from csv files
