@@ -255,7 +255,7 @@ class DataExplorer:
 
     @staticmethod
     def correlation_matrix(df):
-        vector_a = VectorAssembler(inputCols=DataTransformer.IntColumns + ['ArrDelay'], outputCol='all_cols')
+        vector_a = VectorAssembler(inputCols=DataTransformer.IntColumns, outputCol='all_cols')
         df2 = vector_a.transform(df)
         corr_matrix = Correlation.corr(df2, 'all_cols', 'pearson').collect()[0][0]
         print(str(corr_matrix).replace('nan', 'NaN'))
@@ -264,7 +264,7 @@ class DataExplorer:
     @staticmethod
     def correlation_matrix_graph(corr):
         corr_list = np.round(corr.toArray(), 2).tolist()
-        cols = DataTransformer.IntColumns + ['ArrDelay']
+        cols = DataTransformer.IntColumns
 
         fig, ax = plt.subplots()
         im = ax.imshow(corr_list, interpolation='nearest', cmap="bwr")
