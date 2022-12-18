@@ -411,10 +411,10 @@ class ParamTuning:
 '''
 Run the Spark application
 :param years: List of selected years, empty by default
-:param years: List of selected Regression models, empty by default
-:param years: List of selected Classification models, empty by default
-:param years: Minute interval for each class (for Classification models), 10 by default
-:param years: True if the program use Cross Validators, else False, True by default
+:param reg_models: List of selected Regression models, empty by default
+:param class_models: List of selected Classification models, empty by default
+:param class_interv: Minute interval for each class (for Classification models), 10 by default
+:param use_cross_val: True if the program use Cross Validators, else False, True by default
 '''
 def run_spark(years: list = [], reg_models: list = [], class_models: list = [], class_interv: int = 10, use_cross_val=True):
 
