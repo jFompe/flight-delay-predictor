@@ -305,12 +305,11 @@ class Trainer:
     :return: list of models after training
     '''
     @classmethod
-    def train(cls, df, selected_models, use_cv):
+    def train(cls, df, selected_models, use_cv) -> dict:
         if use_cv:
             models = {k: cls.cross_validators[k].fit(df) for k in selected_models}
         else:
-            trainers = {k: cls.available_models[k] for k in selected_models}
-            models = {k: trainers[k].fit(df) for k in trainers}
+            models = {k: cls.available_models[k].fit(df) for k in selected_models}
         return models
 
     '''
