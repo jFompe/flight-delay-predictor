@@ -453,13 +453,18 @@ Main function. Parse arguments passed to the program, then call run_spark()
 '''
 if __name__ == '__main__':
     SCRIPT_NAME = os.path.basename(__file__)
-    # TODO Add the other models
     parser = ap.ArgumentParser(f'spark-submit {SCRIPT_NAME}', formatter_class=RawDescriptionHelpFormatter,
                                description='Spark Application to predict arrival delays in plane flights.\
                                     \nList of all available regression methods:\
                                     \n    - lr: Linear Regression\
+                                    \n    - dtr: Decision Tree Regressor\
+                                    \n    - rfr: Random Forest Regressor\
+                                    \n    - gbtr: Gradient-Boosted Tree Regressor\
                                     \nList of all available classification methods:\
-                                    \n    - lr: Linear Regression\
+                                    \n    - mlr: Multinomial Logistic Regression\
+                                    \n    - dtc: Decision Tree Classfier\
+                                    \n    - rfc: Random Forest Classifier\
+                                    \n    - nbc: Naive Bayes Classifier\
         ')
     parser.add_argument('-y', '--years', type=str,
                         help='Comma-separated list of years data to use. Values in range [1987, 2008]. Values between '
