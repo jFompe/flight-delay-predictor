@@ -111,6 +111,7 @@ class DataCleaner:
         df = df.dropna()
         return df
 
+
 '''
 Prepare data before processing
 '''
@@ -325,6 +326,7 @@ class Trainer:
         evaluations = {f'{k}-{ev}': cls.evaluators[ev].evaluate(predictions[k]) for k in predictions for ev in cls.evaluators}
         return predictions, evaluations
 
+
 '''
 List of available Regression algorithms, their ParamGrids, their evaluator and their Cross-Validators
 '''
@@ -352,6 +354,7 @@ class RegressionTrainer(Trainer):
         'rfr': CrossValidator(estimator=available_models['rfr'], estimatorParamMaps=grids['rfr'], evaluator=evaluators['rmse'], parallelism=Trainer.parallelism),
         'gbtr': CrossValidator(estimator=available_models['gbtr'], estimatorParamMaps=grids['gbtr'], evaluator=evaluators['rmse'], parallelism=Trainer.parallelism),
     }
+
 
 '''
 List of available Classification algorithms, their ParamGrids, their evaluator and their Cross-Validators
