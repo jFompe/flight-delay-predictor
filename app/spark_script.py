@@ -1,18 +1,17 @@
-import os
 import argparse as ap
-from argparse import RawDescriptionHelpFormatter
 import matplotlib.pyplot as plt
 import numpy as np
+import os
+from argparse import RawDescriptionHelpFormatter
 
-from pyspark.ml.tuning import ParamGridBuilder, CrossValidator
-
+import pyspark.sql.functions as F
 from pyspark.ml.classification import LogisticRegression, DecisionTreeClassifier, RandomForestClassifier, NaiveBayes
+from pyspark.ml.evaluation import RegressionEvaluator, MulticlassClassificationEvaluator
 from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler, MinMaxScaler
 from pyspark.ml.regression import LinearRegression, RandomForestRegressor, DecisionTreeRegressor, GBTRegressor
-from pyspark.ml.evaluation import RegressionEvaluator, MulticlassClassificationEvaluator
 from pyspark.ml.stat import Correlation
+from pyspark.ml.tuning import ParamGridBuilder, CrossValidator
 from pyspark.sql import SparkSession
-import pyspark.sql.functions as F
 from pyspark.sql.types import IntegerType
 
 # Initialize the Spark session
@@ -404,14 +403,6 @@ class ParamTuning:
         print('-' * 20)
 
 
-'''
-Run the Spark application
-:param years: List of selected years, empty by default
-:param reg_models: List of selected Regression models, empty by default
-:param class_models: List of selected Classification models, empty by default
-:param class_interv: Minute interval for each class (for Classification models), 10 by default
-:param use_cross_val: True if the program use Cross Validators, else False, True by default
-'''
 def run_spark(years: list = [], reg_models: list = [], class_models: list = [], class_interv: int = 10, use_cross_val=True):
 
     df = DataLoader.load_years(years)
