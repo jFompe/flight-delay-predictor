@@ -484,14 +484,14 @@ if __name__ == '__main__':
     def years_parser(years_str: str) -> list:
         years_list = []
         for y in years_str.split(','):
-            if '-' not in y and (int(y) < 1987 or int(y) > 2008):
-                print(f'Ignoring year out of range [1987-2008]: {y}')
-                continue
-            if '-' not in y:
-                years_list.append(int(y))
-            else:
+            if '-' in y:
                 i, e = tuple(y.split('-'))
                 years_list += [n for n in range(max(int(i), 1987), min(int(e), 2008) + 1)]
+            elif int(y) < 1987 or int(y) > 2008:
+                print(f'Ignoring year out of range [1987-2008]: {y}')
+            else:
+                years_list.append(int(y))
+
         return years_list
 
     def models_parser(inp_str: str, models: dict) -> list:
