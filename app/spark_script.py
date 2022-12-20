@@ -245,6 +245,11 @@ class DataTransformer:
         return df
 
 
+'''
+Explore data: create and print a correlation matrix of the dataframe after the first trasnformations (times as minutes
+and numerical values as integers), creates a heatmap to visualize the correlation matrix and finally a scatter plot for
+the linear relationship between the DepDelay and the ArrDelay variables.
+'''
 class DataExplorer:
 
     @staticmethod
@@ -394,8 +399,16 @@ class ClassificationTrainer(Trainer):
     }
 
 
+'''
+Helper class to show the best configuration for each model chosen by the CrossValidator
+'''
 class ParamTuning:
 
+    '''
+    Print the best configuration for some given models of the category indicated by title.
+    :param title
+    :param trained_models
+    '''
     @staticmethod
     def show_best(title: str, trained_models: dict) -> None:
         print('-' * 20)
