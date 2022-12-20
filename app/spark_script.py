@@ -247,13 +247,13 @@ class DataExplorer:
 
     @staticmethod
     def explore(df):
-        corr_matrix = DataExplorer.correlation_matrix(df)
-        DataExplorer.correlation_matrix_graph(corr_matrix)
-        DataExplorer.scatter_plot(df)
+        corr_matrix = DataExplorer._correlation_matrix(df)
+        DataExplorer._correlation_matrix_graph(corr_matrix)
+        DataExplorer._scatter_plot(df)
         df.select(*DataTransformer.InputColumns).summary().show()
 
     @staticmethod
-    def correlation_matrix(df):
+    def _correlation_matrix(df):
         vector_a = VectorAssembler(inputCols=DataTransformer.IntColumns, outputCol='all_cols')
         df2 = vector_a.transform(df)
         corr_matrix = Correlation.corr(df2, 'all_cols', 'pearson').collect()[0][0]
@@ -261,7 +261,7 @@ class DataExplorer:
         return corr_matrix
 
     @staticmethod
-    def correlation_matrix_graph(corr):
+    def _correlation_matrix_graph(corr):
         corr_list = np.round(corr.toArray(), 2).tolist()
         cols = DataTransformer.IntColumns
 
@@ -284,7 +284,7 @@ class DataExplorer:
         plt.close()
 
     @staticmethod
-    def scatter_plot(df):
+    def _scatter_plot(df):
         arr_delays = df.select(F.collect_list('ArrDelay')).first()[0]
         dep_delays = df.select(F.collect_list('DepDelay')).first()[0]
 
