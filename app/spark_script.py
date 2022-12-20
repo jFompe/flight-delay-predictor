@@ -11,7 +11,7 @@ from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler, Mi
 from pyspark.ml.regression import LinearRegression, RandomForestRegressor, DecisionTreeRegressor, GBTRegressor
 from pyspark.ml.stat import Correlation
 from pyspark.ml.tuning import ParamGridBuilder, CrossValidator
-from pyspark.sql import SparkSession
+from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.types import IntegerType
 
 # Initialize the Spark session
@@ -60,7 +60,7 @@ class DataLoader:
 
 
 '''
-Clean data: remove forbidden variables and NA values
+Clean data: remove forbidden variables, cancelled flights and NA values
 '''
 class DataCleaner:
     ForbiddenVariables = ['ArrTime', 'ActualElapsedTime', 'AirTime', 'TaxiIn', 'Diverted', 'CarrierDelay',
@@ -72,7 +72,7 @@ class DataCleaner:
     :return: dataframe
     '''
     @staticmethod
-    def clean(df):
+    def clean(df: DataFrame) -> DataFrame:
         df = DataCleaner._remove_forbidden(df)
         df = DataCleaner._remove_cancelled(df)
         df = DataCleaner._remove_nulls(df)
@@ -84,7 +84,7 @@ class DataCleaner:
     :return: dataframe
     '''
     @staticmethod
-    def _remove_forbidden(df):
+    def _remove_forbidden(df: DataFrame) -> DataFrame:
         return df.drop(*DataCleaner.ForbiddenVariables)
 
     '''
@@ -93,7 +93,7 @@ class DataCleaner:
     :return: dataframe
     '''
     @staticmethod
-    def _remove_cancelled(df):
+    def _remove_cancelled(df: DataFrame) -> DataFrame:
         df = df.filter(df.Cancelled == "0")
         df = df.drop('Cancelled', 'CancellationCode')
         return df
@@ -104,7 +104,7 @@ class DataCleaner:
     :return: dataframe
     '''
     @staticmethod
-    def _remove_nulls(df):
+    def _remove_nulls(df: DataFrame) -> DataFrame:
         # df = df.filter(F.col('ArrDelay').isNotNull())
         # df = df.filter(F.col('CRSElapsedTime').isNotNull())
         df = df.dropna()
@@ -112,7 +112,10 @@ class DataCleaner:
 
 
 '''
-Prepare data before processing
+Transform data: prepare data before processing by transforming string times to minutes, casting numerical strings to
+integer type, applying one hot encoding to categorical values, vectorizing the features columns, scaling the features
+in a [0,1] range and creating the labels for classification methods.
+In the middle of this process some additional data exploration is done as the dataframe has more appropriate values.
 '''
 class DataTransformer:
     # All columns with numerical values
@@ -127,7 +130,7 @@ class DataTransformer:
     :return: dataframe
     '''
     @staticmethod
-    def transform(df, class_interv):
+    def transform(df: DataFrame, class_interv: int) -> DataFrame:
         df = DataTransformer._do_transform_time_to_mins(df)
         df = DataTransformer._do_cast_ints(df)
         DataExplorer.explore(df)
@@ -144,16 +147,15 @@ class DataTransformer:
     :return: dataframe
     '''
     @staticmethod
-    def _do_transform_time_to_mins(df):
+    def _do_transform_time_to_mins(df: DataFrame) -> DataFrame:
         '''
         Trnsform a time value from hhmm to hh*60+mm
         :param df:
         :return: time in minutes
         '''
-        def time_to_mins(t: str):
+        def time_to_mins(t: str) -> int:
             #Fill the value of time values that have less than 4 digits
             t = t.zfill(4)
-
             return int(t[:2]) * 60 + int(t[2:])
 
         time_to_mins_udf = F.udf(time_to_mins, IntegerType())
@@ -168,7 +170,7 @@ class DataTransformer:
     :return: dataframe
     '''
     @staticmethod
-    def _do_cast_ints(df):
+    def _do_cast_ints(df: DataFrame) -> DataFrame:
         for c in DataTransformer.IntColumns:
             df = df.withColumn(c, F.col(c).cast('int'))
         df = df.dropna()  # Casting may introduce some new null values in
@@ -180,7 +182,7 @@ class DataTransformer:
     :return: dataframe
     '''
     @staticmethod
-    def _one_hot_encode(df):
+    def _one_hot_encode(df: DataFrame) -> DataFrame:
         categorical_columns = [item[0] for item in df.dtypes if item[1].startswith('string')]
         for c in categorical_columns:
             string_indexer = StringIndexer(inputCol=c, outputCol=c + "Index", handleInvalid='skip')
@@ -197,7 +199,7 @@ class DataTransformer:
     :return: dataframe
     '''
     @staticmethod
-    def _prepare_features_cols(df):
+    def _prepare_features_cols(df: DataFrame) -> DataFrame:
         output_column = "features"
 
         vector_a = VectorAssembler(inputCols=DataTransformer.InputColumns, outputCol=output_column)
@@ -210,11 +212,11 @@ class DataTransformer:
     :return: dataframe
     '''
     @staticmethod
-    def _keep_train_cols_only(df):
+    def _keep_train_cols_only(df: DataFrame) -> DataFrame:
         return df.select(['features', 'ArrDelay']).withColumnRenamed('ArrDelay', 'regressionLabel')
 
     @staticmethod
-    def _scale(df):
+    def _scale(df: DataFrame) -> DataFrame:
         df = df.withColumnRenamed('features', 'featuresB4Scale')
         scaler = MinMaxScaler(inputCol='featuresB4Scale', outputCol='features')
         df = scaler.fit(df).transform(df)
@@ -226,8 +228,8 @@ class DataTransformer:
     :return: dataframe
     '''
     @staticmethod
-    def _prepare_label_categories(df, interval):
-        def category_from_delay(delay: int, interval: int):
+    def _prepare_label_categories(df: DataFrame, interval: int) -> DataFrame:
+        def category_from_delay(delay: int, interval: int) -> int:
             if delay <= 0:
                 return 0
             if delay >= 180:
@@ -246,14 +248,14 @@ class DataTransformer:
 class DataExplorer:
 
     @staticmethod
-    def explore(df):
+    def explore(df: DataFrame) -> DataFrame:
         corr_matrix = DataExplorer._correlation_matrix(df)
         DataExplorer._correlation_matrix_graph(corr_matrix)
         DataExplorer._scatter_plot(df)
         df.select(*DataTransformer.InputColumns).summary().show()
 
     @staticmethod
-    def _correlation_matrix(df):
+    def _correlation_matrix(df: DataFrame) -> DataFrame:
         vector_a = VectorAssembler(inputCols=DataTransformer.IntColumns, outputCol='all_cols')
         df2 = vector_a.transform(df)
         corr_matrix = Correlation.corr(df2, 'all_cols', 'pearson').collect()[0][0]
@@ -261,7 +263,7 @@ class DataExplorer:
         return corr_matrix
 
     @staticmethod
-    def _correlation_matrix_graph(corr):
+    def _correlation_matrix_graph(corr_matrix: list) -> None:
         corr_list = np.round(corr.toArray(), 2).tolist()
         cols = DataTransformer.IntColumns
 
@@ -284,7 +286,7 @@ class DataExplorer:
         plt.close()
 
     @staticmethod
-    def _scatter_plot(df):
+    def _scatter_plot(df: DataFrame) -> None:
         arr_delays = df.select(F.collect_list('ArrDelay')).first()[0]
         dep_delays = df.select(F.collect_list('DepDelay')).first()[0]
 
@@ -314,7 +316,7 @@ class Trainer:
     :return: list of models after training
     '''
     @classmethod
-    def train(cls, df, selected_models, use_cv) -> dict:
+    def train(cls, df: DataFrame, selected_models: list, use_cv: bool) -> dict:
         if use_cv:
             models = {k: cls.cross_validators[k].fit(df) for k in selected_models}
         else:
@@ -328,7 +330,7 @@ class Trainer:
     :return: list of predictions and evaluations of all models
     '''
     @classmethod
-    def test(cls, df, models) -> tuple:
+    def test(cls, df: DataFrame, models: dict) -> tuple:
         predictions = {k: models[k].transform(df) for k in models}
         evaluations = {f'{k}-{ev}': cls.evaluators[ev].evaluate(predictions[k]) for k in predictions for ev in cls.evaluators}
         return predictions, evaluations
@@ -395,7 +397,7 @@ class ClassificationTrainer(Trainer):
 class ParamTuning:
 
     @staticmethod
-    def show_best(title, trained_models):
+    def show_best(title: str, trained_models: dict) -> None:
         print('-' * 20)
         print(f'Best params extracted from Cross-Validation for {title}')
         for name, model in trained_models.items():
@@ -411,7 +413,7 @@ Run the Spark application
 :param class_interv: Minute interval for each class (for Classification models), 10 by default
 :param use_cross_val: True if the program use Cross Validators, else False, True by default
 '''
-def run_spark(years: list = [], reg_models: list = [], class_models: list = [], class_interv: int = 10, use_cross_val=True):
+def run_spark(years: list = [], reg_models: list = [], class_models: list = [], class_interv: int = 10, use_cross_val: bool = True) -> None:
 
     df = DataLoader.load_years(years)
     df = DataCleaner.clean(df)
@@ -489,7 +491,7 @@ if __name__ == '__main__':
                 years_list += [n for n in range(int(i), int(e) + 1)]
         return years_list
 
-    def models_parser(inp_str: str, models) -> list:
+    def models_parser(inp_str: str, models: dict) -> list:
         if inp_str == 'none':
             return []
         if inp_str == 'all':
