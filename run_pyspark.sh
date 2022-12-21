@@ -6,6 +6,7 @@ SCRIPT_FILE_NAME=spark_script.py
 
 
 docker run -it -v ~/.aws:/home/glue_user/.aws \
+  -v /tmp:/tmp/graphics:rw \
   -v "$WORKSPACE_LOCATION":/home/glue_user/workspace/app/ \
   -e AWS_PROFILE=$PROFILE_NAME -e DISABLE_SSL=true \
   --rm -p 4040:4040 -p 18080:18080 \
