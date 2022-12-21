@@ -10,6 +10,7 @@ import pyspark.sql.functions as F
 from pyspark.ml.classification import LogisticRegression, DecisionTreeClassifier, RandomForestClassifier, NaiveBayes
 from pyspark.ml.evaluation import RegressionEvaluator, MulticlassClassificationEvaluator
 from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler, MinMaxScaler
+from pyspark.ml.linalg import DenseMatrix
 from pyspark.ml.regression import LinearRegression, RandomForestRegressor, DecisionTreeRegressor, GBTRegressor
 from pyspark.ml.stat import Correlation
 from pyspark.ml.tuning import ParamGridBuilder, CrossValidator
@@ -268,7 +269,6 @@ class DataExplorer:
         corr_matrix = DataExplorer._correlation_matrix(df)
         DataExplorer._correlation_matrix_graph(corr_matrix)
         DataExplorer._scatter_plot(df)
-        df.select(*DataTransformer.InputColumns).summary().show()
 
     '''
     Create and print the correlation matrix bewtween the numerical variables
@@ -276,7 +276,7 @@ class DataExplorer:
     :return: list
     '''
     @staticmethod
-    def _correlation_matrix(df: DataFrame) -> list:
+    def _correlation_matrix(df: DataFrame) -> DenseMatrix:
         vector_a = VectorAssembler(inputCols=DataTransformer.IntColumns, outputCol='all_cols')
         df2 = vector_a.transform(df)
         corr_matrix = Correlation.corr(df2, 'all_cols', 'pearson').collect()[0][0]
@@ -288,8 +288,8 @@ class DataExplorer:
     :param corr_matrix:
     '''
     @staticmethod
-    def _correlation_matrix_graph(corr_matrix: list) -> None:
-        corr_list = np.round(corr.toArray(), 2).tolist()
+    def _correlation_matrix_graph(corr_matrix: DenseMatrix) -> None:
+        corr_list = np.round(corr_matrix.toArray(), 2).tolist()
         cols = DataTransformer.IntColumns
 
         fig, ax = plt.subplots()
