@@ -1,9 +1,11 @@
+# Imports from Python standard library
 import argparse as ap
 import matplotlib.pyplot as plt
 import numpy as np
 import os
 from argparse import RawDescriptionHelpFormatter
 
+# Imports from PySpark modules
 import pyspark.sql.functions as F
 from pyspark.ml.classification import LogisticRegression, DecisionTreeClassifier, RandomForestClassifier, NaiveBayes
 from pyspark.ml.evaluation import RegressionEvaluator, MulticlassClassificationEvaluator
@@ -124,7 +126,7 @@ class DataTransformer:
     InputColumns = ['DepTime', 'CRSDepTime', 'CRSArrTime', 'CRSElapsedTime', 'DepDelay', 'Distance', 'TaxiOut']
 
     '''
-    Transform the dataframe in order to facilitate its processing (later)
+    Transform the dataframe in order to facilitate its processing (later) and explore the correlation between variables.
     :param df: 
     :param class_interv:
     :return: dataframe
@@ -142,7 +144,7 @@ class DataTransformer:
         return df
 
     '''
-    Transform the format time values from hhmm to hh*60+mm
+    Transform the format time values from hhmm string to minutes integer
     :param df: 
     :return: dataframe
     '''
@@ -165,7 +167,7 @@ class DataTransformer:
         return df
 
     '''
-    Cast string to integers
+    Cast numerical strings to integers
     :param df:
     :return: dataframe
     '''
@@ -194,7 +196,7 @@ class DataTransformer:
         return df
 
     '''
-    Assemble all selected columns into one vector
+    Assemble all selected columns into one vector of features
     :param df:
     :return: dataframe
     '''
@@ -215,6 +217,11 @@ class DataTransformer:
     def _keep_train_cols_only(df: DataFrame) -> DataFrame:
         return df.select(['features', 'ArrDelay']).withColumnRenamed('ArrDelay', 'regressionLabel')
 
+    '''
+    Scale features in [0,1] range
+    :param df:
+    :return: dataframe
+    '''
     @staticmethod
     def _scale(df: DataFrame) -> DataFrame:
         df = df.withColumnRenamed('features', 'featuresB4Scale')
@@ -252,6 +259,10 @@ the linear relationship between the DepDelay and the ArrDelay variables.
 '''
 class DataExplorer:
 
+    '''
+    Explore the linear relationships between the variables
+    :param df:
+    '''
     @staticmethod
     def explore(df: DataFrame) -> DataFrame:
         corr_matrix = DataExplorer._correlation_matrix(df)
@@ -259,14 +270,23 @@ class DataExplorer:
         DataExplorer._scatter_plot(df)
         df.select(*DataTransformer.InputColumns).summary().show()
 
+    '''
+    Create and print the correlation matrix bewtween the numerical variables
+    :param df:
+    :return: list
+    '''
     @staticmethod
-    def _correlation_matrix(df: DataFrame) -> DataFrame:
+    def _correlation_matrix(df: DataFrame) -> list:
         vector_a = VectorAssembler(inputCols=DataTransformer.IntColumns, outputCol='all_cols')
         df2 = vector_a.transform(df)
         corr_matrix = Correlation.corr(df2, 'all_cols', 'pearson').collect()[0][0]
         print(str(corr_matrix).replace('nan', 'NaN'))
         return corr_matrix
 
+    '''
+    Create a heatmap to visualize a correlation_matrix. The graph is created in /tmp/graphics/corr.png
+    :param corr_matrix:
+    '''
     @staticmethod
     def _correlation_matrix_graph(corr_matrix: list) -> None:
         corr_list = np.round(corr.toArray(), 2).tolist()
@@ -290,6 +310,10 @@ class DataExplorer:
         plt.savefig('/tmp/graphics/corr.png')
         plt.close()
 
+    '''
+    Create a scatter plot to visualize the linear relationship between variables ArrDelay and DepDelay. The graph is created in /tmp/graphics/scatter.png
+    :param df:
+    '''
     @staticmethod
     def _scatter_plot(df: DataFrame) -> None:
         arr_delays = df.select(F.collect_list('ArrDelay')).first()[0]
@@ -428,36 +452,47 @@ Run the Spark application
 '''
 def run_spark(years: list = [], reg_models: list = [], class_models: list = [], class_interv: int = 10, use_cross_val: bool = True) -> None:
 
+    print('Beggining load and preprocessing')
     df = DataLoader.load_years(years)
     df = DataCleaner.clean(df)
     df = DataTransformer.transform(df, class_interv)
     df_train, df_test = df.randomSplit([0.7, 0.3])
+    print('End load and preprocessing')
 
     print('Beggining training')
     reg_trained = RegressionTrainer.train(df_train, reg_models, use_cross_val)
     class_trained = ClassificationTrainer.train(df_train, class_models, use_cross_val)
+    print('End training')
     if use_cross_val:
         print('Showing best parameters')
         ParamTuning.show_best('Regression models', reg_trained)
         ParamTuning.show_best('Classification models', class_trained)
+        print('End best parameters')
 
     print('Beggining testing')
     reg_preds, reg_evals = RegressionTrainer.test(df_test, reg_trained)
     cls_preds, cls_evals = ClassificationTrainer.test(df_test, class_trained)
+    print('End testing')
 
-    df.show(20)
-    print(reg_evals)
-    print(cls_evals)
+    print('Beggining results')
+    if reg_models:
+        print('Regression Metrics')
+        for rp in reg_preds.values():
+            rp.show()
+    if class_models:
+        print('Classification Metrics')
+        for cp in cls_preds.values():
+            cp.show()
 
-    for rp in reg_preds.values():
-        rp.show()
-    for cp in cls_preds.values():
-        cp.show()
-
-    for k in reg_evals:
-        print(k, reg_evals[k])
-    for k in cls_evals:
-        print(k, cls_evals[k])
+    if reg_models:
+        print('Regression Evaluations')
+        for k in reg_evals:
+            print(k, reg_evals[k])
+    if class_models:
+        print('Classification Evaluations')
+        for k in cls_evals:
+            print(k, cls_evals[k])
+    print('End results and exit')
 
     exit(0)
 
