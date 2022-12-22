@@ -476,11 +476,11 @@ def run_spark(years: list = [], reg_models: list = [], class_models: list = [], 
 
     print('Beggining results')
     if reg_models:
-        print('Regression Metrics')
+        print('Regression Predictions')
         for rp in reg_preds.values():
             rp.show()
     if class_models:
-        print('Classification Metrics')
+        print('Classification Predictions')
         for cp in cls_preds.values():
             cp.show()
 
